@@ -1,3 +1,5 @@
+import MapView from "@/components/MapView";
+
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col">
@@ -38,16 +40,14 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Map placeholder */}
+      {/* Environmental map */}
       <section id="map" className="px-6 py-16 border-t border-neutral-200 dark:border-neutral-800">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-2xl font-bold mb-2">Environmental Map</h2>
+          <h2 className="text-2xl font-bold mb-2">Environmental Data Map</h2>
           <p className="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">
-            Interactive geospatial map powered by Mapbox — coming soon.
+            Live mock PM2.5 readings around Iasi displayed with interactive markers.
           </p>
-          <div className="w-full h-64 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center border border-dashed border-neutral-300 dark:border-neutral-700">
-            <span className="text-neutral-400 dark:text-neutral-500 text-sm">🗺 Map will be displayed here</span>
-          </div>
+          <MapView />
         </div>
       </section>
 
