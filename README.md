@@ -36,14 +36,15 @@ npm install
 npm run dev
 ```
 
-The API server starts on **http://localhost:4000**.
+The API server starts on **http://localhost:5000**.
 
-Health check: `GET http://localhost:4000/api/health` → `{ "status": "ok" }`
+Health check: `GET http://localhost:5000/api/health` → `{ "status": "ok" }`
 
 ### Frontend
 
 ```bash
 cd frontend
+cp .env.example .env.local
 npm install
 npm run dev
 ```
