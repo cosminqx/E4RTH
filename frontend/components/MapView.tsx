@@ -1,25 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { type LngLatLike } from "mapbox-gl";
-import { getEnvironmentData, type PollutionPoint } from "@/lib/api";
+import { getEnvironmentData, type EnvironmentMeasurement } from "@/lib/api";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-type PollutionStatus = "Low" | "Moderate" | "High";
+type MarkerLevel = "low" | "moderate" | "high";
 type LoadState = "loading" | "success" | "error";
 
 const IASI_CENTER: LngLatLike = [27.6014, 47.1585];
 
-function getPollutionStatus(pm25: number): PollutionStatus {
-  if (pm25 < 15) return "Low";
-  if (pm25 < 30) return "Moderate";
-  return "High";
+function getMarkerColor(level: MarkerLevel): string {
+  if (level === "low") return "#16a34a";
+  if (level === "moderate") return "#f59e0b";
+  return "#dc2626";
 }
 
-function getMarkerColor(status: PollutionStatus): string {
-  if (status === "Low") return "#16a34a";
-  if (status === "Moderate") return "#f59e0b";
-  return "#dc2626";
+function toLabel(level: MarkerLevel): string {
+  if (level === "low") return "Low";
+  if (level === "moderate") return "Moderate";
+  return "High";
 }
 
 export default function MapView() {
@@ -29,7 +29,24 @@ export default function MapView() {
   const [isMapReady, setIsMapReady] = useState(false);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [pollutionPoints, setPollutionPoints] = useState<PollutionPoint[]>([]);
+  const [measurements, setMeasurements] = useState<EnvironmentMeasurement[]>([]);
+  const [showPm25, setShowPm25] = useState(true);
+  const [showPm10, setShowPm10] = useState(true);
+
+  const visibleMeasurements = useMemo(
+    () =>
+      measurements.filter((entry) => {
+        if (entry.type === "pm25") {
+          return showPm25;
+        }
+
+        return showPm10;
+      }),
+    [measurements, showPm10, showPm25]
+  );
+
+  const pm25Count = measurements.filter((entry) => entry.type === "pm25").length;
+  const pm10Count = measurements.filter((entry) => entry.type === "pm10").length;
 
   useEffect(() => {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -72,7 +89,7 @@ export default function MapView() {
         setState("loading");
         setError(null);
         const data = await getEnvironmentData(controller.signal);
-        setPollutionPoints(data);
+        setMeasurements(data);
         setState("success");
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -92,35 +109,33 @@ export default function MapView() {
 
   // Add markers to map when both map and data are ready
   useEffect(() => {
-    if (
-      !mapRef.current ||
-      !isMapReady ||
-      state !== "success" ||
-      pollutionPoints.length === 0
-    ) {
+    if (!mapRef.current || !isMapReady || state !== "success") {
       return;
     }
 
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
-    pollutionPoints.forEach((point) => {
-      const status = getPollutionStatus(point.pm25);
+    if (visibleMeasurements.length === 0) {
+      return;
+    }
+
+    visibleMeasurements.forEach((entry) => {
       const popup = new mapboxgl.Popup({ offset: 20 }).setHTML(
         `<div style="font-family: ui-sans-serif, system-ui; padding: 4px 2px;">
-          <strong>PM2.5 Level: ${point.pm25}</strong><br />
-          <span>Status: ${status}</span>
+          <strong>${entry.type.toUpperCase()}: ${entry.value.toFixed(2)}</strong><br />
+          <span>Level: ${toLabel(entry.level)}</span>
         </div>`
       );
 
-      const marker = new mapboxgl.Marker({ color: getMarkerColor(status) })
-        .setLngLat([point.lng, point.lat])
+      const marker = new mapboxgl.Marker({ color: getMarkerColor(entry.level) })
+        .setLngLat([entry.lng, entry.lat])
         .setPopup(popup)
         .addTo(mapRef.current!);
 
       markersRef.current.push(marker);
     });
-  }, [isMapReady, pollutionPoints, state]);
+  }, [isMapReady, visibleMeasurements, state]);
 
   if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
     return (
@@ -133,6 +148,30 @@ export default function MapView() {
   return (
     <div className="relative w-full rounded-2xl border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-900">
       <div ref={mapContainerRef} className="h-[420px] sm:h-[480px] w-full" />
+
+      {state === "success" && (
+        <div className="absolute top-3 left-3 z-10 rounded-xl border border-neutral-200/90 dark:border-neutral-700/90 bg-white/95 dark:bg-neutral-900/95 px-3 py-2 text-xs shadow-sm">
+          <p className="font-semibold text-neutral-700 dark:text-neutral-200 mb-2">
+            Air Layers
+          </p>
+          <label className="flex items-center gap-2 text-neutral-700 dark:text-neutral-200 mb-1">
+            <input
+              type="checkbox"
+              checked={showPm25}
+              onChange={(event) => setShowPm25(event.target.checked)}
+            />
+            PM2.5 ({pm25Count})
+          </label>
+          <label className="flex items-center gap-2 text-neutral-700 dark:text-neutral-200">
+            <input
+              type="checkbox"
+              checked={showPm10}
+              onChange={(event) => setShowPm10(event.target.checked)}
+            />
+            PM10 ({pm10Count})
+          </label>
+        </div>
+      )}
 
       {state === "loading" && (
         <div className="absolute inset-0 bg-white/85 dark:bg-neutral-900/85 flex items-center justify-center">

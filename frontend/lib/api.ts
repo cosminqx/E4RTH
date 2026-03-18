@@ -14,10 +14,15 @@
  * - Backend (Express): http://localhost:5001
  */
 
-export type PollutionPoint = {
+export type MeasurementType = "pm25" | "pm10";
+export type PollutionLevel = "low" | "moderate" | "high";
+
+export type EnvironmentMeasurement = {
   lat: number;
   lng: number;
-  pm25: number;
+  type: MeasurementType;
+  value: number;
+  level: PollutionLevel;
 };
 
 /**
@@ -32,7 +37,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
  */
 export async function getEnvironmentData(
   signal?: AbortSignal
-): Promise<PollutionPoint[]> {
+): Promise<EnvironmentMeasurement[]> {
   const response = await fetch(`${API_BASE_URL}/api/environment/data`, {
     method: "GET",
     headers: {
@@ -48,5 +53,5 @@ export async function getEnvironmentData(
     );
   }
 
-  return (await response.json()) as PollutionPoint[];
+  return (await response.json()) as EnvironmentMeasurement[];
 }

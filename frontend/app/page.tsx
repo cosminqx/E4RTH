@@ -45,7 +45,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto">
           <h2 className="text-2xl font-bold mb-2">Environmental Data Map</h2>
           <p className="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">
-            Live mock PM2.5 readings around Iasi displayed with interactive markers.
+            Live PM2.5 and PM10 readings around Iasi with marker levels and layer toggles.
           </p>
           <MapView />
         </div>
