@@ -1,4 +1,5 @@
 import axios from "axios";
+import prisma from "./dbService";
 
 export type MeasurementType = "pm25" | "pm10";
 export type PollutionLevel = "low" | "moderate" | "high";
@@ -9,6 +10,7 @@ export interface EnvironmentMeasurement {
   type: MeasurementType;
   value: number;
   level: PollutionLevel;
+  timestamp: Date;
 }
 
 interface OpenAQSensor {
@@ -38,6 +40,9 @@ interface OpenAQLatestResult {
   coordinates?: {
     latitude?: number;
     longitude?: number;
+  };
+  datetime?: {
+    utc?: string;
   };
 }
 
@@ -114,7 +119,33 @@ function toServiceError(error: unknown): Error {
   return error instanceof Error ? error : new Error("Unexpected OpenAQ error");
 }
 
-export async function fetchLatestMeasurements(): Promise<EnvironmentMeasurement[]> {
+async function saveMeasurements(
+  measurements: EnvironmentMeasurement[]
+): Promise<number> {
+  if (measurements.length === 0) {
+    return 0;
+  }
+
+  const result = await prisma.airMeasurement.createMany({
+    data: measurements,
+    skipDuplicates: true,
+  });
+
+  console.info(
+    `[DB] Saved environmental measurements: attempted=${measurements.length}, inserted=${result.count}`
+  );
+
+  return result.count;
+}
+
+export async function getAirHistory(limit = 50) {
+  return prisma.airMeasurement.findMany({
+    orderBy: { timestamp: "desc" },
+    take: limit,
+  });
+}
+
+export async function fetchAirData(): Promise<EnvironmentMeasurement[]> {
   if (isCacheValid() && cache) {
     console.info(`[OpenAQ] Using cache with ${cache.data.length} points`);
     return cache.data;
@@ -198,12 +229,16 @@ export async function fetchLatestMeasurements(): Promise<EnvironmentMeasurement[
           const lng = item.coordinates?.longitude;
           const value = item.value;
           const sensorId = item.sensorsId;
+          const rawTimestamp = item.datetime?.utc;
+          const timestamp = rawTimestamp ? new Date(rawTimestamp) : null;
 
           if (
             typeof lat !== "number" ||
             typeof lng !== "number" ||
             typeof value !== "number" ||
-            typeof sensorId !== "number"
+            typeof sensorId !== "number" ||
+            !timestamp ||
+            Number.isNaN(timestamp.getTime())
           ) {
             continue;
           }
@@ -225,6 +260,7 @@ export async function fetchLatestMeasurements(): Promise<EnvironmentMeasurement[
             type,
             value,
             level: getLevelFromPm25(pm25Value),
+            timestamp,
           });
         }
 
@@ -233,12 +269,15 @@ export async function fetchLatestMeasurements(): Promise<EnvironmentMeasurement[
     );
 
     const data = measurementsNested.flat();
+    const insertedCount = await saveMeasurements(data);
     cache = {
       timestamp: Date.now(),
       data,
     };
 
-    console.info(`[OpenAQ] Fetched ${data.length} normalized points`);
+    console.info(
+      `[OpenAQ] Fetched ${data.length} normalized points, inserted ${insertedCount} new rows`
+    );
     return data;
   } catch (error) {
     throw toServiceError(error);

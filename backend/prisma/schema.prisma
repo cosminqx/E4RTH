@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AirMeasurement {
+  id        String   @id @default(uuid())
+  lat       Float
+  lng       Float
+  type      String
+  value     Float
+  level     String
+  timestamp DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([lat, lng, type, timestamp])
+  @@index([timestamp])
+  @@map("Measurement")
+}
+
+model WeatherData {
+  id                  String   @id @default(uuid())
+  lat                 Float
+  lng                 Float
+  temperature         Float
+  apparentTemperature Float
+  windSpeed           Float
+  weatherCode         Int
+  timestamp           DateTime
+  createdAt           DateTime @default(now())
+
+  @@unique([lat, lng, timestamp])
+  @@index([timestamp])
+}
+
+model BiodiversityRecord {
+  id              String   @id @default(uuid())
+  lat             Float
+  lng             Float
+  species         String
+  occurrenceCount Int
+  source          String
+  timestamp       DateTime
+  createdAt       DateTime @default(now())
+
+  @@unique([lat, lng, species, timestamp])
+  @@index([timestamp])
+}
