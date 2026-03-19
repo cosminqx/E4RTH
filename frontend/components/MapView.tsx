@@ -2,51 +2,195 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { type LngLatLike } from "mapbox-gl";
-import { getEnvironmentData, type EnvironmentMeasurement } from "@/lib/api";
+import {
+  getMapData,
+  type MapCategory,
+  type UnifiedMapPoint,
+} from "@/lib/api";
+import LayerControls from "@/components/LayerControls";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-type MarkerLevel = "low" | "moderate" | "high";
 type LoadState = "loading" | "success" | "error";
+type ActiveLayers = Record<MapCategory, boolean>;
+type AirGeoJSON = GeoJSON.FeatureCollection<GeoJSON.Point>;
 
 const IASI_CENTER: LngLatLike = [27.6014, 47.1585];
+const AIR_SOURCE_ID = "air-source";
+const AIR_HEAT_LAYER_ID = "air-heat-layer";
+const AIR_CLICK_LAYER_ID = "air-click-layer";
+const MAX_MARKERS_PER_LAYER = 150;
 
-function getMarkerColor(level: MarkerLevel): string {
-  if (level === "low") return "#16a34a";
-  if (level === "moderate") return "#f59e0b";
-  return "#dc2626";
+const DEFAULT_ACTIVE_LAYERS: ActiveLayers = {
+  air: true,
+  weather: true,
+  biodiversity: true,
+};
+
+function getMarkerColor(category: MapCategory): string {
+  if (category === "weather") {
+    return "#06b6d4";
+  }
+
+  return "#c026d3";
 }
 
-function toLabel(level: MarkerLevel): string {
-  if (level === "low") return "Low";
-  if (level === "moderate") return "Moderate";
-  return "High";
+function toLevelWeight(level: UnifiedMapPoint["level"]): number {
+  if (level === "low") {
+    return 1;
+  }
+
+  if (level === "moderate") {
+    return 2;
+  }
+
+  return 3;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatValue(value: UnifiedMapPoint["value"]): string {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+
+  return value;
+}
+
+function toPopupHtml(point: UnifiedMapPoint): string {
+  const metadataRows = point.metadata
+    ? Object.entries(point.metadata)
+        .map(
+          ([key, value]) =>
+            `<div><span style=\"opacity:0.7\">${escapeHtml(key)}</span>: ${escapeHtml(
+              String(value)
+            )}</div>`
+        )
+        .join("")
+    : "";
+
+  return `<div style=\"font-family: ui-sans-serif, system-ui; padding: 4px 2px; min-width: 180px;\">\
+    <div style=\"font-size:12px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.75; margin-bottom:2px;\">${escapeHtml(
+      point.category
+    )}</div>\
+    <div style=\"font-weight:700; margin-bottom:2px;\">${escapeHtml(point.type)}</div>\
+    <div style=\"margin-bottom:2px;\">Value: ${escapeHtml(formatValue(
+      point.value
+    ))}</div>\
+    ${point.level ? `<div style=\"margin-bottom:2px;\">Level: ${escapeHtml(point.level)}</div>` : ""}\
+    ${metadataRows}\
+  </div>`;
+}
+
+function toAirGeoJSON(points: UnifiedMapPoint[]): AirGeoJSON {
+  return {
+    type: "FeatureCollection",
+    features: points.map((point) => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [point.lng, point.lat],
+      },
+      properties: {
+        lat: point.lat,
+        lng: point.lng,
+        category: point.category,
+        type: point.type,
+        value: point.value,
+        level: point.level,
+        levelWeight: toLevelWeight(point.level),
+      },
+    })),
+  };
+}
+
+function parseAirFeature(
+  feature: mapboxgl.MapboxGeoJSONFeature
+): UnifiedMapPoint | null {
+  const lat = feature.properties?.lat;
+  const lng = feature.properties?.lng;
+  const type = feature.properties?.type;
+  const value = feature.properties?.value;
+  const level = feature.properties?.level;
+
+  if (
+    typeof lat !== "number" ||
+    typeof lng !== "number" ||
+    typeof type !== "string" ||
+    (typeof value !== "number" && typeof value !== "string")
+  ) {
+    return null;
+  }
+
+  const normalizedLevel =
+    level === "low" || level === "moderate" || level === "high"
+      ? level
+      : undefined;
+
+  return {
+    lat,
+    lng,
+    category: "air",
+    type,
+    value,
+    level: normalizedLevel,
+  };
 }
 
 export default function MapView() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [measurements, setMeasurements] = useState<EnvironmentMeasurement[]>([]);
-  const [showPm25, setShowPm25] = useState(true);
-  const [showPm10, setShowPm10] = useState(true);
+  const [points, setPoints] = useState<UnifiedMapPoint[]>([]);
+  const [activeLayers, setActiveLayers] =
+    useState<ActiveLayers>(DEFAULT_ACTIVE_LAYERS);
 
-  const visibleMeasurements = useMemo(
-    () =>
-      measurements.filter((entry) => {
-        if (entry.type === "pm25") {
-          return showPm25;
-        }
-
-        return showPm10;
-      }),
-    [measurements, showPm10, showPm25]
+  const filteredPoints = useMemo(
+    () => points.filter((point) => activeLayers[point.category]),
+    [points, activeLayers]
   );
 
-  const pm25Count = measurements.filter((entry) => entry.type === "pm25").length;
-  const pm10Count = measurements.filter((entry) => entry.type === "pm10").length;
+  const layerCounts = useMemo(
+    () => ({
+      air: points.filter((point) => point.category === "air").length,
+      weather: points.filter((point) => point.category === "weather").length,
+      biodiversity: points.filter((point) => point.category === "biodiversity").length,
+    }),
+    [points]
+  );
+
+  const airPoints = useMemo(
+    () => filteredPoints.filter((point) => point.category === "air"),
+    [filteredPoints]
+  );
+
+  const weatherPoints = useMemo(
+    () =>
+      filteredPoints
+        .filter((point) => point.category === "weather")
+        .slice(0, MAX_MARKERS_PER_LAYER),
+    [filteredPoints]
+  );
+
+  const biodiversityPoints = useMemo(
+    () =>
+      filteredPoints
+        .filter((point) => point.category === "biodiversity")
+        .slice(0, MAX_MARKERS_PER_LAYER),
+    [filteredPoints]
+  );
+
+  const airGeoJSON = useMemo(() => toAirGeoJSON(airPoints), [airPoints]);
 
   useEffect(() => {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -66,6 +210,74 @@ export default function MapView() {
     });
 
     map.on("load", () => {
+      map.addSource(AIR_SOURCE_ID, {
+        type: "geojson",
+        data: toAirGeoJSON([]),
+      });
+
+      map.addLayer({
+        id: AIR_HEAT_LAYER_ID,
+        type: "heatmap",
+        source: AIR_SOURCE_ID,
+        maxzoom: 15,
+        paint: {
+          "heatmap-weight": ["get", "levelWeight"],
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.8, 11, 1.6],
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0,
+            "rgba(22,163,74,0)",
+            0.35,
+            "#22c55e",
+            0.65,
+            "#eab308",
+            1,
+            "#dc2626",
+          ],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 12, 12, 28],
+          "heatmap-opacity": 0.82,
+        },
+      });
+
+      // Invisible circles preserve click interactions and popups for individual air points.
+      map.addLayer({
+        id: AIR_CLICK_LAYER_ID,
+        type: "circle",
+        source: AIR_SOURCE_ID,
+        paint: {
+          "circle-radius": 8,
+          "circle-opacity": 0,
+        },
+      });
+
+      map.on("click", AIR_CLICK_LAYER_ID, (event) => {
+        const feature = event.features?.[0];
+        if (!feature) {
+          return;
+        }
+
+        const point = parseAirFeature(feature);
+        if (!point) {
+          return;
+        }
+
+        popupRef.current?.remove();
+        popupRef.current = new mapboxgl.Popup({ offset: 12 })
+          .setLngLat([point.lng, point.lat])
+          .setHTML(toPopupHtml(point))
+          .addTo(map);
+      });
+
+      map.on("mouseenter", AIR_CLICK_LAYER_ID, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+
+      map.on("mouseleave", AIR_CLICK_LAYER_ID, () => {
+        map.getCanvas().style.cursor = "";
+      });
+
       setIsMapReady(true);
     });
 
@@ -74,6 +286,8 @@ export default function MapView() {
     return () => {
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
+      popupRef.current?.remove();
+      popupRef.current = null;
       setIsMapReady(false);
       map.remove();
       mapRef.current = null;
@@ -88,13 +302,13 @@ export default function MapView() {
       try {
         setState("loading");
         setError(null);
-        const data = await getEnvironmentData(controller.signal);
-        setMeasurements(data);
+        const data = await getMapData(controller.signal);
+        setPoints(data);
         setState("success");
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(
-          err instanceof Error ? err.message : "Failed to load environment data"
+          err instanceof Error ? err.message : "Failed to load map data"
         );
         setState("error");
       }
@@ -107,7 +321,40 @@ export default function MapView() {
     };
   }, []);
 
-  // Add markers to map when both map and data are ready
+  useEffect(() => {
+    if (!mapRef.current || !isMapReady) {
+      return;
+    }
+
+    const source = mapRef.current.getSource(AIR_SOURCE_ID) as
+      | mapboxgl.GeoJSONSource
+      | undefined;
+
+    if (source) {
+      source.setData(airGeoJSON);
+    }
+
+    const heatVisibility =
+      activeLayers.air && airPoints.length > 0 ? "visible" : "none";
+
+    if (mapRef.current.getLayer(AIR_HEAT_LAYER_ID)) {
+      mapRef.current.setLayoutProperty(
+        AIR_HEAT_LAYER_ID,
+        "visibility",
+        heatVisibility
+      );
+    }
+
+    if (mapRef.current.getLayer(AIR_CLICK_LAYER_ID)) {
+      mapRef.current.setLayoutProperty(
+        AIR_CLICK_LAYER_ID,
+        "visibility",
+        heatVisibility
+      );
+    }
+  }, [airGeoJSON, airPoints.length, isMapReady, activeLayers.air]);
+
+  // Render weather and biodiversity markers after filters are applied.
   useEffect(() => {
     if (!mapRef.current || !isMapReady || state !== "success") {
       return;
@@ -116,26 +363,22 @@ export default function MapView() {
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
-    if (visibleMeasurements.length === 0) {
-      return;
-    }
-
-    visibleMeasurements.forEach((entry) => {
-      const popup = new mapboxgl.Popup({ offset: 20 }).setHTML(
-        `<div style="font-family: ui-sans-serif, system-ui; padding: 4px 2px;">
-          <strong>${entry.type.toUpperCase()}: ${entry.value.toFixed(2)}</strong><br />
-          <span>Level: ${toLabel(entry.level)}</span>
-        </div>`
-      );
-
-      const marker = new mapboxgl.Marker({ color: getMarkerColor(entry.level) })
-        .setLngLat([entry.lng, entry.lat])
-        .setPopup(popup)
+    [...weatherPoints, ...biodiversityPoints].forEach((point) => {
+      const marker = new mapboxgl.Marker({ color: getMarkerColor(point.category) })
+        .setLngLat([point.lng, point.lat])
+        .setPopup(new mapboxgl.Popup({ offset: 18 }).setHTML(toPopupHtml(point)))
         .addTo(mapRef.current!);
 
       markersRef.current.push(marker);
     });
-  }, [isMapReady, visibleMeasurements, state]);
+  }, [isMapReady, weatherPoints, biodiversityPoints, state]);
+
+  function toggleLayer(category: MapCategory): void {
+    setActiveLayers((current) => ({
+      ...current,
+      [category]: !current[category],
+    }));
+  }
 
   if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
     return (
@@ -150,27 +393,11 @@ export default function MapView() {
       <div ref={mapContainerRef} className="h-[420px] sm:h-[480px] w-full" />
 
       {state === "success" && (
-        <div className="absolute top-3 left-3 z-10 rounded-xl border border-neutral-200/90 dark:border-neutral-700/90 bg-white/95 dark:bg-neutral-900/95 px-3 py-2 text-xs shadow-sm">
-          <p className="font-semibold text-neutral-700 dark:text-neutral-200 mb-2">
-            Air Layers
-          </p>
-          <label className="flex items-center gap-2 text-neutral-700 dark:text-neutral-200 mb-1">
-            <input
-              type="checkbox"
-              checked={showPm25}
-              onChange={(event) => setShowPm25(event.target.checked)}
-            />
-            PM2.5 ({pm25Count})
-          </label>
-          <label className="flex items-center gap-2 text-neutral-700 dark:text-neutral-200">
-            <input
-              type="checkbox"
-              checked={showPm10}
-              onChange={(event) => setShowPm10(event.target.checked)}
-            />
-            PM10 ({pm10Count})
-          </label>
-        </div>
+        <LayerControls
+          activeLayers={activeLayers}
+          onToggleLayer={toggleLayer}
+          counts={layerCounts}
+        />
       )}
 
       {state === "loading" && (

@@ -16,6 +16,7 @@
 
 export type MeasurementType = "pm25" | "pm10";
 export type PollutionLevel = "low" | "moderate" | "high";
+export type MapCategory = "air" | "weather" | "biodiversity";
 
 export type EnvironmentMeasurement = {
   lat: number;
@@ -23,6 +24,16 @@ export type EnvironmentMeasurement = {
   type: MeasurementType;
   value: number;
   level: PollutionLevel;
+};
+
+export type UnifiedMapPoint = {
+  lat: number;
+  lng: number;
+  category: MapCategory;
+  type: string;
+  value: number | string;
+  level?: PollutionLevel;
+  metadata?: Record<string, unknown>;
 };
 
 /**
@@ -54,4 +65,27 @@ export async function getEnvironmentData(
   }
 
   return (await response.json()) as EnvironmentMeasurement[];
+}
+
+/**
+ * Fetch unified map data from backend
+ * GET /api/environment/map
+ */
+export async function getMapData(
+  signal?: AbortSignal
+): Promise<UnifiedMapPoint[]> {
+  const response = await fetch(`${API_BASE_URL}/api/environment/map`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch map data with status ${response.status}`);
+  }
+
+  return (await response.json()) as UnifiedMapPoint[];
 }
