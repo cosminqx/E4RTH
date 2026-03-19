@@ -22,3 +22,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Local agent tooling artifacts
+backend/.agents/
+backend/skills-lock.json
