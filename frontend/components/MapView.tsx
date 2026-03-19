@@ -414,7 +414,7 @@ export default function MapView() {
             <p className="font-medium">Failed to load map data</p>
             <p className="text-sm mt-1">{error}</p>
             <p className="text-sm mt-2 opacity-75">
-              Make sure the backend is running on http://localhost:5001
+              Check NEXT_PUBLIC_API_URL points to your public Railway backend URL.
             </p>
           </div>
         </div>

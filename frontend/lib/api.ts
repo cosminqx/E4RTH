@@ -36,11 +36,26 @@ export type UnifiedMapPoint = {
   metadata?: Record<string, unknown>;
 };
 
+function normalizeApiBaseUrl(rawUrl?: string): string {
+  const value = rawUrl?.trim();
+
+  if (!value) {
+    return "http://localhost:5001";
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value.replace(/\/+$/, "");
+  }
+
+  // Vercel env vars are sometimes provided as hostnames only.
+  return `https://${value.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+}
+
 /**
  * Base URL for the Express backend.
- * Uses NEXT_PUBLIC_API_URL env var if available, otherwise defaults to localhost:5001
+ * Uses NEXT_PUBLIC_API_URL env var if available, otherwise defaults to localhost:5001.
  */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 /**
  * Fetch environmental data (pollution points) from the backend
