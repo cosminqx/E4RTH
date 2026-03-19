@@ -137,7 +137,19 @@ export async function getMapData(
   res: Response
 ): Promise<void> {
   try {
-    const data = await getUnifiedMapData(200);
+    let data = await getUnifiedMapData(200);
+
+    if (data.length === 0) {
+      console.info("[EnvironmentController] Map requested with empty DB, hydrating from sources");
+      await Promise.all([
+        fetchAirData(),
+        fetchWeatherData(),
+        fetchBiodiversityData(),
+      ]);
+
+      data = await getUnifiedMapData(200);
+    }
+
     console.info(`[EnvironmentController] Returning ${data.length} map points`);
     res.json(data);
   } catch (error) {
