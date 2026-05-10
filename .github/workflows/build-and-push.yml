@@ -29,6 +29,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set lowercase repo name
+        run: echo "REPO_NAME_LOWER=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Build and push backend image
         uses: docker/build-push-action@v4
         with:
@@ -36,8 +39,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ toLower(github.event.repository.name) }}-backend:latest
-            ghcr.io/${{ github.repository_owner }}/${{ toLower(github.event.repository.name) }}-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.REPO_NAME_LOWER }}-backend:latest
+            ghcr.io/${{ github.repository_owner }}/${{ env.REPO_NAME_LOWER }}-backend:${{ github.sha }}
 
       - name: Build and push worker image
         uses: docker/build-push-action@v4
@@ -46,5 +49,5 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ toLower(github.event.repository.name) }}-worker:latest
-            ghcr.io/${{ github.repository_owner }}/${{ toLower(github.event.repository.name) }}-worker:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.REPO_NAME_LOWER }}-worker:latest
+            ghcr.io/${{ github.repository_owner }}/${{ env.REPO_NAME_LOWER }}-worker:${{ github.sha }}
