@@ -26,3 +26,9 @@ Thumbs.db
 # Local agent tooling artifacts
 backend/.agents/
 backend/skills-lock.json
+
+# Python local artifacts
+**/__pycache__/
+*.py[cod]
+*.db
+backend_fastapi/.venv/

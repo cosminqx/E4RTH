@@ -1,0 +1,84 @@
+language: minimal
+language: minimal
+sudo: required
+services:
+  - docker
+
+env:
+  global:
+    - REPO_NAME=${TRAVIS_REPO_SLUG##*/}
+
+before_install:
+  - echo "Setting up qemu and Docker Buildx for multi-arch builds"
+  - sudo apt-get update -qq
+  - sudo apt-get install -y --no-install-recommends qemu-user-static
+  - mkdir -p ~/.docker/cli-plugins
+  - curl -sSL https://github.com/docker/buildx/releases/latest/download/buildx-$(uname -s)-$(uname -m) -o ~/.docker/cli-plugins/docker-buildx
+  - chmod +x ~/.docker/cli-plugins/docker-buildx
+  - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes || true
+  - docker buildx create --use --name multiarch_builder || true
+  - echo "Logging into GitHub Container Registry (ghcr.io)"
+  - echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+script:
+  - set -e
+  # prepare tags
+  - SHORT_SHA=${TRAVIS_COMMIT::8}
+  - BACKEND_TAG=ghcr.io/$GHCR_USERNAME/${REPO_NAME}-backend:$SHORT_SHA
+  - BACKEND_LATEST=ghcr.io/$GHCR_USERNAME/${REPO_NAME}-backend:latest
+  - WORKER_TAG=ghcr.io/$GHCR_USERNAME/${REPO_NAME}-worker:$SHORT_SHA
+  - WORKER_LATEST=ghcr.io/$GHCR_USERNAME/${REPO_NAME}-worker:latest
+
+  # Build & push backend multi-arch image with registry cache
+  - docker buildx build --platform linux/amd64,linux/arm64 \
+      --tag $BACKEND_TAG --tag $BACKEND_LATEST \
+      --cache-from=type=registry,ref=$BACKEND_LATEST \
+      --cache-to=type=registry,mode=max,ref=$BACKEND_LATEST \
+      -f backend/Dockerfile backend --push
+
+  # Build & push worker image (adjust Dockerfile if worker needs different build)
+  - docker buildx build --platform linux/amd64,linux/arm64 \
+      --tag $WORKER_TAG --tag $WORKER_LATEST \
+      --cache-from=type=registry,ref=$WORKER_LATEST \
+      --cache-to=type=registry,mode=max,ref=$WORKER_LATEST \
+      -f backend/Dockerfile backend --push
+
+  # Optional: run Alembic migrations using the backend image if DATABASE_URL is provided
+  - if [ -n "$DATABASE_URL" ]; then \
+      echo "Running alembic migrations against DATABASE_URL"; \
+      docker run --rm -e DATABASE_URL="$DATABASE_URL" $BACKEND_TAG sh -c "alembic -c alembic.ini upgrade head"; \
+    else \
+      echo "DATABASE_URL not set; skipping alembic migrations"; \
+    fi
+
+  # Optional: create and push a lightweight release tag if GH_TOKEN provided
+  - if [ -n "$GH_TOKEN" ]; then \
+      TAG=v$(date +%Y%m%d)-$SHORT_SHA; \
+      git config user.email "travis@users.noreply.github.com"; \
+      git config user.name "Travis CI"; \
+      git remote set-url origin https://$GH_TOKEN@github.com/$TRAVIS_REPO_SLUG.git; \
+      git tag -a $TAG -m "ci: release $TAG" $TRAVIS_COMMIT; \
+      git push origin $TAG; \
+    else \
+      echo "GH_TOKEN not set; skipping git tag/release"; \
+    fi
+
+  # Optional: trigger Northflank deploy via webhook if provided
+  - if [ -n "$NORTHFLANK_TRIGGER_URL" ]; then \
+      echo "Triggering Northflank deploy webhook"; \
+      curl -X POST -H "Content-Type: application/json" -d '{"ref":"'$TRAVIS_COMMIT'"}' "$NORTHFLANK_TRIGGER_URL" || true; \
+    else \
+      echo "No NORTHFLANK_TRIGGER_URL; skipping deploy trigger"; \
+    fi
+
+after_success:
+  - echo "Build and push completed: $BACKEND_TAG, $WORKER_TAG"
+
+# Notes for repo maintainers:
+# - Configure the following Travis environment variables (private):
+#   - GHCR_USERNAME = GitHub username or machine account
+#   - GHCR_PAT = GitHub Personal Access Token with `write:packages` (and `repo` for private repos)
+#   - DATABASE_URL = Postgres connection string (optional; required to run migrations)
+#   - GH_TOKEN = GitHub token (optional; used to create a release tag)
+#   - NORTHFLANK_TRIGGER_URL = optional webhook URL to trigger deploys (keep secret)
+# - This job now builds multi-arch images and uses registry cache to speed up builds.

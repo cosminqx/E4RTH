@@ -9,7 +9,7 @@ export default function Home() {
         <nav className="flex gap-6 text-sm text-neutral-600 dark:text-neutral-400">
           <a href="#map" className="hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors">Map</a>
           <a href="#dashboard" className="hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors">Dashboard</a>
-          <a href="#volunteer" className="hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors">Volunteer</a>
+          <a href="/get-involved" className="hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors">Get Involved</a>
         </nav>
       </header>
 
@@ -26,10 +26,10 @@ export default function Home() {
         </p>
         <div className="flex gap-4 mt-4">
           <a
-            href="#volunteer"
+            href="/get-involved"
             className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
           >
-            Join as Volunteer
+            Get Involved
           </a>
           <a
             href="#map"
@@ -72,20 +72,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Call-to-action for volunteers */}
-      <section id="volunteer" className="px-6 py-16 border-t border-neutral-200 dark:border-neutral-800">
-        <div className="max-w-5xl mx-auto text-center flex flex-col items-center gap-4">
-          <h2 className="text-2xl font-bold">Get Involved</h2>
-          <p className="text-neutral-600 dark:text-neutral-400 max-w-lg">
-            Join our global community of volunteers helping to monitor, report, and
-            restore the health of our planet.
-          </p>
-          <a
-            href="mailto:volunteer@e4rth.org"
-            className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-          >
-            Become a Volunteer
-          </a>
+      <section className="px-6 py-16 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="max-w-5xl mx-auto text-center">
+          <p className="text-neutral-500 dark:text-neutral-400 text-sm">Want to support E4RTH? Visit our <a href="/get-involved" className="text-green-600 hover:underline">Get Involved</a> page to contact our NGO team.</p>
         </div>
       </section>
 
