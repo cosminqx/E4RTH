@@ -1,6 +1,5 @@
-from typing import List, Optional
-from pydantic import BaseModel
-from fastapi import APIRouter, Depends
+from typing import Any, Optional
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from app.db.session import get_session
 from app.models import Environment
@@ -8,41 +7,35 @@ from app.models import Environment
 router = APIRouter(prefix="/api/environment", tags=["map"])
 
 
-class UnifiedMapPoint(BaseModel):
-    lat: float
-    lng: float
-    category: str  # "air" | "weather" | "biodiversity"
-    type: str
-    value: float | str
-    level: Optional[str] = None
-    metadata: Optional[dict] = None
+def _build_map_points(session: Session) -> list[dict[str, Any]]:
+    stmt = select(Environment)
+    environments = session.exec(stmt).all()
+
+    return [
+        {
+            "lat": env.latitude,
+            "lng": env.longitude,
+            "category": "air",
+            "type": env.name,
+            "value": 0,
+            "metadata": {
+                "id": env.id,
+                "name": env.name,
+                "source_id": env.source_id,
+            },
+        }
+        for env in environments
+    ]
 
 
-@router.get("/map", response_model=List[UnifiedMapPoint])
+@router.get("/map")
+@router.get("/data")
 def get_map_data(*, session: Session = Depends(get_session)):
     """
     Fetch unified map data from backend.
     Returns all environments as map points.
     """
-    stmt = select(Environment)
-    environments = session.exec(stmt).all()
-    
-    map_points = []
-    for env in environments:
-        # Convert environment to map point
-        # For now, all environments are treated as generic data points
-        point = UnifiedMapPoint(
-            lat=env.latitude,
-            lng=env.longitude,
-            category="air",  # Default category; can be customized based on source
-            type=env.name,
-            value=0,  # No measurement value yet
-            metadata={
-                "id": env.id,
-                "name": env.name,
-                "source_id": env.source_id,
-            },
-        )
-        map_points.append(point)
-    
-    return map_points
+    try:
+        return _build_map_points(session)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail="Failed to fetch map data") from error
