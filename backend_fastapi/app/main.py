@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import init_db
-from app.api.routers import health, environment
+from app.api.routers import health, environment, map
 
 
 def create_app() -> FastAPI:
@@ -23,6 +23,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(environment.router)
+    app.include_router(map.router)
 
     @app.on_event("startup")
     def on_startup():

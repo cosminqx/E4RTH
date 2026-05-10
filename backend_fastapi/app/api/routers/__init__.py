@@ -1,1 +1,1 @@
-from . import health, environment  # re-export routers
+from . import health, environment, map  # re-export routers
